@@ -1,12 +1,35 @@
 import html
 import os
 
+from app.image_processing import EpsonRasterImage
+
 
 def build_text_epos_xml(text: str, copies: int = 1) -> str:
     copies = max(1, copies)
     escaped = html.escape(text, quote=False)
     body = "".join(
         f"<text>{escaped}</text><feed line=\"3\" /><cut />"
+        for _ in range(copies)
+    )
+    return (
+        '<epos-print xmlns="http://www.epson-pos.com/schemas/2011/03/epos-print">'
+        f"{body}"
+        "</epos-print>"
+    )
+
+
+def build_image_epos_xml(image: EpsonRasterImage, copies: int = 1) -> str:
+    copies = max(1, copies)
+    body = "".join(
+        "<image "
+        f"width=\"{image.width}\" "
+        f"height=\"{image.height}\" "
+        "color=\"color_1\" "
+        "mode=\"mono\">"
+        f"{image.data_base64}"
+        "</image>"
+        "<feed line=\"3\" />"
+        "<cut />"
         for _ in range(copies)
     )
     return (

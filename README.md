@@ -24,6 +24,7 @@ uvicorn app.main:app --reload
 - `API_KEY`: shared API key required by `/api/*` endpoints.
 - `DATABASE_URL`: SQLAlchemy database URL. Defaults to SQLite.
 - `DEFAULT_DEVICE_ID`: Epson ePOS device id used in returned SDP XML. Defaults to `local_printer`.
+- `PRINTER_WIDTH_DOTS`: printable raster width for image jobs. Defaults to `576`, the common 80mm / 203dpi printable width for TM-m30II-class printers.
 
 ## Endpoints
 
@@ -49,6 +50,41 @@ curl -X POST http://localhost:8000/api/jobs \
     "text": "Hello from cloud",
     "copies": 1
   }'
+```
+
+### Create An Image Print Job
+
+Image jobs accept a raw base64 image string or a `data:image/...;base64,...` value. The backend validates the image immediately, then the printer poll converts it to monochrome raster data for 80mm paper at 203dpi. Images wider than `PRINTER_WIDTH_DOTS` are resized proportionally to 576 dots by default; narrower images keep their width and are padded to a multiple of 8 dots for raster packing.
+
+```bash
+IMAGE_BASE64="$(base64 -w 0 receipt-logo.png)"
+
+curl -X POST http://localhost:8000/api/jobs \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: dev-secret" \
+  -d "{
+    \"printer_id\": \"printer_001\",
+    \"type\": \"image\",
+    \"image_base64\": \"${IMAGE_BASE64}\",
+    \"copies\": 1
+  }"
+```
+
+On Windows PowerShell:
+
+```powershell
+$imageBase64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes("receipt-logo.png"))
+
+Invoke-RestMethod http://localhost:8000/api/jobs `
+  -Method Post `
+  -Headers @{ "X-API-Key" = "dev-secret" } `
+  -ContentType "application/json" `
+  -Body (@{
+    printer_id = "printer_001"
+    type = "image"
+    image_base64 = $imageBase64
+    copies = 1
+  } | ConvertTo-Json)
 ```
 
 ### List Recent Jobs
@@ -84,6 +120,16 @@ When a pending job exists, the server marks it `sent_to_printer` and returns:
     </PrintData>
   </ePOSPrint>
 </PrintRequestInfo>
+```
+
+For image jobs, `<PrintData>` contains a monochrome raster image element:
+
+```xml
+<epos-print xmlns="http://www.epson-pos.com/schemas/2011/03/epos-print">
+  <image width="576" height="..." color="color_1" mode="mono">...</image>
+  <feed line="3" />
+  <cut />
+</epos-print>
 ```
 
 ### Epson SetResponse

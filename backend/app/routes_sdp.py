@@ -4,7 +4,8 @@ from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.epos_xml import build_text_epos_xml, wrap_sdp_print_request
+from app.epos_xml import build_image_epos_xml, build_text_epos_xml, wrap_sdp_print_request
+from app.image_processing import prepare_image_for_80mm_203dpi
 from app.models import PrintJob
 
 router = APIRouter(prefix="/sdp")
@@ -36,7 +37,11 @@ def printer_poll(
         job.status = "sent_to_printer"
         db.commit()
 
-        epos_xml = build_text_epos_xml(job.text, job.copies)
+        if job.type == "image" and job.image_base64:
+            image = prepare_image_for_80mm_203dpi(job.image_base64)
+            epos_xml = build_image_epos_xml(image, job.copies)
+        else:
+            epos_xml = build_text_epos_xml(job.text, job.copies)
         return Response(
             content=wrap_sdp_print_request(epos_xml),
             media_type=XML_MEDIA_TYPE,

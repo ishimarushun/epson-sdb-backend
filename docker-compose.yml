@@ -8,6 +8,7 @@ services:
       API_KEY: ${API_KEY:-dev-secret}
       DATABASE_URL: ${DATABASE_URL:-sqlite:////data/sdp.db}
       DEFAULT_DEVICE_ID: ${DEFAULT_DEVICE_ID:-local_printer}
+      PRINTER_WIDTH_DOTS: ${PRINTER_WIDTH_DOTS:-576}
     volumes:
       - sdp_data:/data
 

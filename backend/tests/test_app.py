@@ -1,3 +1,5 @@
+import base64
+import io
 import os
 import tempfile
 
@@ -8,6 +10,7 @@ os.environ["DATABASE_URL"] = f"sqlite:///{db_file.name}"
 os.environ["DEFAULT_DEVICE_ID"] = "local_printer"
 
 from fastapi.testclient import TestClient  # noqa: E402
+from PIL import Image  # noqa: E402
 import pytest  # noqa: E402
 
 from app.main import app  # noqa: E402
@@ -89,6 +92,45 @@ def test_get_request_returns_sdp_xml_and_marks_sent(client: TestClient) -> None:
     assert job["status"] == "sent_to_printer"
 
 
+def test_image_job_returns_80mm_203dpi_raster_xml(client: TestClient) -> None:
+    image_base64 = _make_png_base64(width=800, height=100)
+    create_response = client.post(
+        "/api/jobs",
+        headers={"X-API-Key": "test-key"},
+        json={
+            "printer_id": "printer_image",
+            "type": "image",
+            "image_base64": image_base64,
+            "copies": 1,
+        },
+    )
+    assert create_response.status_code == 201
+    assert create_response.json()["type"] == "image"
+
+    poll_response = client.post(
+        "/sdp/print",
+        data={"ConnectionType": "GetRequest", "ID": "printer_image"},
+    )
+
+    assert poll_response.status_code == 200
+    assert "<image width=\"576\" height=\"72\" color=\"color_1\" mode=\"mono\">" in poll_response.text
+    assert "<cut />" in poll_response.text
+
+
+def test_image_job_rejects_invalid_base64(client: TestClient) -> None:
+    response = client.post(
+        "/api/jobs",
+        headers={"X-API-Key": "test-key"},
+        json={
+            "printer_id": "printer_bad_image",
+            "type": "image",
+            "image_base64": "not-an-image",
+            "copies": 1,
+        },
+    )
+    assert response.status_code == 400
+
+
 def test_set_response_marks_latest_sent_job_printed(client: TestClient) -> None:
     client.post(
         "/api/jobs",
@@ -121,3 +163,13 @@ def test_set_response_marks_latest_sent_job_printed(client: TestClient) -> None:
     job = next(job for job in jobs_response.json() if job["printer_id"] == "printer_set_response")
     assert job["status"] == "printed"
     assert job["printer_response"] == "<response success=\"true\" />"
+
+
+def _make_png_base64(width: int, height: int) -> str:
+    image = Image.new("RGB", (width, height), "white")
+    for x in range(0, width, 20):
+        for y in range(height):
+            image.putpixel((x, y), (0, 0, 0))
+    output = io.BytesIO()
+    image.save(output, format="PNG")
+    return base64.b64encode(output.getvalue()).decode("ascii")
