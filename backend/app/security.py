@@ -1,14 +1,17 @@
-import os
 import hmac
 import hashlib
+import logging
+import os
 import re
 import secrets
 import time
+from urllib.parse import urlsplit
 
 from fastapi import Header, HTTPException, Request, status
 
 
 PRINTER_DIGEST_NONCE_MAX_AGE_SECONDS = 300
+logger = logging.getLogger(__name__)
 
 
 def require_api_key(x_api_key: str | None = Header(default=None)) -> None:
@@ -26,7 +29,7 @@ def require_printer_digest_auth(request: Request) -> str:
     authorization = request.headers.get("authorization")
 
     if not authorization or not authorization.lower().startswith("digest "):
-        raise _printer_digest_challenge(realm)
+        raise _printer_digest_challenge(realm, "missing digest authorization", request)
 
     digest_fields = _parse_digest_authorization(authorization.split(" ", 1)[1])
     username = digest_fields.get("username")
@@ -45,30 +48,58 @@ def require_printer_digest_auth(request: Request) -> str:
         or not response
         or not _valid_digest_nonce(nonce)
     ):
-        raise _printer_digest_challenge(realm)
+        raise _printer_digest_challenge(
+            realm,
+            "malformed digest authorization",
+            request,
+            username=username,
+            digest_uri=uri,
+        )
 
-    request_uri = request.url.path
-    if request.url.query:
-        request_uri = f"{request_uri}?{request.url.query}"
-    if uri != request_uri:
-        raise _printer_digest_challenge(realm)
+    if not _digest_uri_matches_request(uri, request):
+        raise _printer_digest_challenge(
+            realm,
+            "digest uri does not match request",
+            request,
+            username=username,
+            digest_uri=uri,
+        )
 
     ha1 = _md5_hex(f"{username}:{realm}:{password}")
     ha2 = _md5_hex(f"{request.method}:{uri}")
     if qop:
         if qop != "auth" or not nc or not cnonce:
-            raise _printer_digest_challenge(realm)
+            raise _printer_digest_challenge(
+                realm,
+                "unsupported digest qop",
+                request,
+                username=username,
+                digest_uri=uri,
+            )
         expected_response = _md5_hex(f"{ha1}:{nonce}:{nc}:{cnonce}:{qop}:{ha2}")
     else:
         expected_response = _md5_hex(f"{ha1}:{nonce}:{ha2}")
 
     if not hmac.compare_digest(response, expected_response):
-        raise _printer_digest_challenge(realm)
+        raise _printer_digest_challenge(
+            realm,
+            "digest response mismatch",
+            request,
+            username=username,
+            digest_uri=uri,
+        )
 
     return username
 
 
-def _printer_digest_challenge(realm: str) -> HTTPException:
+def _printer_digest_challenge(
+    realm: str,
+    reason: str,
+    request: Request,
+    username: str | None = None,
+    digest_uri: str | None = None,
+) -> HTTPException:
+    _log_printer_digest_failure(reason, request, username=username, digest_uri=digest_uri)
     nonce = _make_digest_nonce()
     return HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -108,6 +139,48 @@ def _valid_digest_nonce(nonce: str) -> bool:
     value = f"{timestamp}:{random_value}"
     expected_signature = hmac.new(_digest_nonce_secret(), value.encode("utf-8"), hashlib.sha256).hexdigest()
     return hmac.compare_digest(signature, expected_signature)
+
+
+def _digest_uri_matches_request(digest_uri: str, request: Request) -> bool:
+    request_uri = _request_path_and_query(request)
+    if digest_uri == request_uri:
+        return True
+
+    parsed = urlsplit(digest_uri)
+    if not parsed.scheme or not parsed.netloc:
+        return False
+
+    absolute_path = parsed.path or "/"
+    if parsed.query:
+        absolute_path = f"{absolute_path}?{parsed.query}"
+    return absolute_path == request_uri
+
+
+def _request_path_and_query(request: Request) -> str:
+    request_uri = request.url.path
+    if request.url.query:
+        request_uri = f"{request_uri}?{request.url.query}"
+    return request_uri
+
+
+def _log_printer_digest_failure(
+    reason: str,
+    request: Request,
+    username: str | None = None,
+    digest_uri: str | None = None,
+) -> None:
+    if os.getenv("PRINTER_AUTH_DEBUG", "").lower() not in {"1", "true", "yes"}:
+        return
+
+    client_host = request.client.host if request.client else "unknown"
+    logger.warning(
+        "Printer digest auth failed: reason=%s client=%s path=%s username=%s digest_uri=%s",
+        reason,
+        client_host,
+        _request_path_and_query(request),
+        username or "",
+        digest_uri or "",
+    )
 
 
 def _digest_nonce_secret() -> bytes:

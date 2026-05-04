@@ -1,4 +1,5 @@
 import base64
+import hashlib
 import io
 import os
 import tempfile
@@ -53,6 +54,31 @@ def test_printer_poll_rejects_auth_username_that_does_not_match_id(client: TestC
     )
 
     assert response.status_code == 403
+
+
+def test_printer_poll_accepts_absolute_digest_uri(client: TestClient) -> None:
+    initial_response = client.post(
+        "/sdp/print",
+        data={"ConnectionType": "GetRequest", "ID": "printer_absolute_uri"},
+    )
+    assert initial_response.status_code == 401
+
+    response = client.post(
+        "/sdp/print",
+        headers={
+            "Authorization": _digest_authorization_header(
+                initial_response.headers["www-authenticate"],
+                username="printer_absolute_uri",
+                password="test-printer-secret",
+                method="POST",
+                uri="http://testserver/sdp/print",
+            )
+        },
+        data={"ConnectionType": "GetRequest", "ID": "printer_absolute_uri"},
+    )
+
+    assert response.status_code == 200
+    assert response.content == b""
 
 
 def test_create_job_and_list_jobs(client: TestClient) -> None:
@@ -194,6 +220,41 @@ def test_set_response_marks_latest_sent_job_printed(client: TestClient) -> None:
 
 def _printer_auth(printer_id: str) -> DigestAuth:
     return DigestAuth(printer_id, "test-printer-secret")
+
+
+def _digest_authorization_header(
+    challenge: str,
+    username: str,
+    password: str,
+    method: str,
+    uri: str,
+) -> str:
+    challenge_fields = _parse_digest_challenge(challenge)
+    realm = challenge_fields["realm"]
+    nonce = challenge_fields["nonce"]
+    qop = "auth"
+    nc = "00000001"
+    cnonce = "test-cnonce"
+    ha1 = _md5_hex(f"{username}:{realm}:{password}")
+    ha2 = _md5_hex(f"{method}:{uri}")
+    response = _md5_hex(f"{ha1}:{nonce}:{nc}:{cnonce}:{qop}:{ha2}")
+    return (
+        f'Digest username="{username}", realm="{realm}", nonce="{nonce}", '
+        f'uri="{uri}", response="{response}", algorithm=MD5, '
+        f'qop={qop}, nc={nc}, cnonce="{cnonce}"'
+    )
+
+
+def _parse_digest_challenge(challenge: str) -> dict[str, str]:
+    fields: dict[str, str] = {}
+    for item in challenge.removeprefix("Digest ").split(","):
+        key, value = item.strip().split("=", 1)
+        fields[key] = value.strip('"')
+    return fields
+
+
+def _md5_hex(value: str) -> str:
+    return hashlib.md5(value.encode("utf-8")).hexdigest()
 
 
 def _make_png_base64(width: int, height: int) -> str:
