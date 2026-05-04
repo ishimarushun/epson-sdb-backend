@@ -1,0 +1,15 @@
+services:
+  backend:
+    build:
+      context: ./backend
+    ports:
+      - "8000:8000"
+    environment:
+      API_KEY: ${API_KEY:-dev-secret}
+      DATABASE_URL: ${DATABASE_URL:-sqlite:////data/sdp.db}
+      DEFAULT_DEVICE_ID: ${DEFAULT_DEVICE_ID:-local_printer}
+    volumes:
+      - sdp_data:/data
+
+volumes:
+  sdp_data:
