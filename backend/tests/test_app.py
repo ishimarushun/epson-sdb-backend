@@ -36,6 +36,14 @@ def test_api_requires_key(client: TestClient) -> None:
     assert response.status_code == 401
 
 
+def test_admin_page_shows_jobs_endpoint_and_request_errors(client: TestClient) -> None:
+    response = client.get("/admin")
+
+    assert response.status_code == 200
+    assert 'new URL("api/jobs", new URL("./", window.location.href))' in response.text
+    assert "Request failed before the server responded" in response.text
+
+
 def test_printer_poll_requires_digest_auth(client: TestClient) -> None:
     response = client.post(
         "/sdp/print",

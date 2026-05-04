@@ -55,23 +55,43 @@ def admin_page() -> str:
     </form>
     <pre id="result"></pre>
     <script>
-      document.getElementById("job-form").addEventListener("submit", async (event) => {
+      const form = document.getElementById("job-form");
+      const result = document.getElementById("result");
+      const jobsUrl = new URL("api/jobs", new URL("./", window.location.href));
+
+      result.textContent = `Ready. Jobs endpoint: ${jobsUrl}`;
+
+      form.addEventListener("submit", async (event) => {
         event.preventDefault();
-        const result = document.getElementById("result");
-        const response = await fetch("/api/jobs", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-API-Key": document.getElementById("api-key").value
-          },
-          body: JSON.stringify({
-            printer_id: document.getElementById("printer-id").value,
-            type: "text",
-            text: document.getElementById("text").value,
-            copies: Number(document.getElementById("copies").value)
-          })
-        });
-        result.textContent = JSON.stringify(await response.json(), null, 2);
+        result.textContent = `Submitting to ${jobsUrl} ...`;
+
+        try {
+          const response = await fetch(jobsUrl, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-API-Key": document.getElementById("api-key").value
+            },
+            body: JSON.stringify({
+              printer_id: document.getElementById("printer-id").value,
+              type: "text",
+              text: document.getElementById("text").value,
+              copies: Number(document.getElementById("copies").value)
+            })
+          });
+
+          const responseText = await response.text();
+          let body = responseText;
+          try {
+            body = JSON.stringify(JSON.parse(responseText), null, 2);
+          } catch {
+            body = responseText || "(empty response)";
+          }
+
+          result.textContent = `HTTP ${response.status} ${response.statusText}\n\n${body}`;
+        } catch (error) {
+          result.textContent = `Request failed before the server responded:\n${error}`;
+        }
       });
     </script>
   </body>
