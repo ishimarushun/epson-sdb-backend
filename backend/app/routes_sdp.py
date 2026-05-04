@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Form
+from fastapi import APIRouter, Depends, Form, HTTPException, status
 from fastapi.responses import Response
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
@@ -7,6 +7,7 @@ from app.db import get_db
 from app.epos_xml import build_image_epos_xml, build_text_epos_xml, wrap_sdp_print_request
 from app.image_processing import prepare_image_for_80mm_203dpi
 from app.models import PrintJob
+from app.security import require_printer_digest_auth
 
 router = APIRouter(prefix="/sdp")
 
@@ -22,8 +23,15 @@ def printer_poll(
     ConnectionType: str = Form(...),
     ID: str = Form(...),
     ResponseFile: str | None = Form(default=None),
+    authenticated_printer_id: str = Depends(require_printer_digest_auth),
     db: Session = Depends(get_db),
 ) -> Response:
+    if authenticated_printer_id != ID:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Authenticated printer does not match requested printer ID",
+        )
+
     if ConnectionType == "GetRequest":
         job = (
             db.query(PrintJob)

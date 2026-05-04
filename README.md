@@ -22,6 +22,8 @@ uvicorn app.main:app --reload
 ## Environment
 
 - `API_KEY`: shared API key required by `/api/*` endpoints.
+- `PRINTER_POLL_PASSWORD`: shared HTTP Digest password required by Epson Server Direct Print polling. Configure the printer's Server Direct Print ID as the printer ID, and configure this value as its password.
+- `PRINTER_POLL_REALM`: optional HTTP Digest realm for printer polling. Defaults to `epson-sdp`.
 - `DATABASE_URL`: SQLAlchemy database URL. Defaults to SQLite.
 - `DEFAULT_DEVICE_ID`: Epson ePOS device id used in returned SDP XML. Defaults to `local_printer`.
 - `PRINTER_WIDTH_DOTS`: printable raster width for image jobs. Defaults to `576`, the common 80mm / 203dpi printable width for TM-m30II-class printers.
@@ -100,6 +102,7 @@ When no pending job exists, this returns HTTP 200 with `Content-Type: text/xml; 
 
 ```bash
 curl -i -X POST http://localhost:8000/sdp/print \
+  --digest -u printer_001:dev-printer-secret \
   -H "Content-Type: application/x-www-form-urlencoded" \
   --data "ConnectionType=GetRequest&ID=printer_001"
 ```
@@ -138,6 +141,7 @@ Stores the raw printer response XML against the latest sent job. If the response
 
 ```bash
 curl -i -X POST http://localhost:8000/sdp/print \
+  --digest -u printer_001:dev-printer-secret \
   -H "Content-Type: application/x-www-form-urlencoded" \
   --data-urlencode "ConnectionType=SetResponse" \
   --data-urlencode "ID=printer_001" \

@@ -4,12 +4,14 @@ import os
 import tempfile
 
 os.environ["API_KEY"] = "test-key"
+os.environ["PRINTER_POLL_PASSWORD"] = "test-printer-secret"
 db_file = tempfile.NamedTemporaryFile(delete=False)
 db_file.close()
 os.environ["DATABASE_URL"] = f"sqlite:///{db_file.name}"
 os.environ["DEFAULT_DEVICE_ID"] = "local_printer"
 
 from fastapi.testclient import TestClient  # noqa: E402
+from httpx import DigestAuth  # noqa: E402
 from PIL import Image  # noqa: E402
 import pytest  # noqa: E402
 
@@ -31,6 +33,26 @@ def test_health(client: TestClient) -> None:
 def test_api_requires_key(client: TestClient) -> None:
     response = client.get("/api/jobs")
     assert response.status_code == 401
+
+
+def test_printer_poll_requires_digest_auth(client: TestClient) -> None:
+    response = client.post(
+        "/sdp/print",
+        data={"ConnectionType": "GetRequest", "ID": "printer_001"},
+    )
+
+    assert response.status_code == 401
+    assert response.headers["www-authenticate"].startswith("Digest ")
+
+
+def test_printer_poll_rejects_auth_username_that_does_not_match_id(client: TestClient) -> None:
+    response = client.post(
+        "/sdp/print",
+        auth=_printer_auth("printer_a"),
+        data={"ConnectionType": "GetRequest", "ID": "printer_b"},
+    )
+
+    assert response.status_code == 403
 
 
 def test_create_job_and_list_jobs(client: TestClient) -> None:
@@ -55,6 +77,7 @@ def test_create_job_and_list_jobs(client: TestClient) -> None:
 def test_get_request_returns_empty_xml_when_no_job(client: TestClient) -> None:
     response = client.post(
         "/sdp/print",
+        auth=_printer_auth("unknown_printer"),
         data={"ConnectionType": "GetRequest", "ID": "unknown_printer"},
     )
     assert response.status_code == 200
@@ -77,6 +100,7 @@ def test_get_request_returns_sdp_xml_and_marks_sent(client: TestClient) -> None:
 
     poll_response = client.post(
         "/sdp/print",
+        auth=_printer_auth("printer_poll_xml"),
         data={"ConnectionType": "GetRequest", "ID": "printer_poll_xml"},
     )
 
@@ -109,6 +133,7 @@ def test_image_job_returns_80mm_203dpi_raster_xml(client: TestClient) -> None:
 
     poll_response = client.post(
         "/sdp/print",
+        auth=_printer_auth("printer_image"),
         data={"ConnectionType": "GetRequest", "ID": "printer_image"},
     )
 
@@ -144,11 +169,13 @@ def test_set_response_marks_latest_sent_job_printed(client: TestClient) -> None:
     )
     client.post(
         "/sdp/print",
+        auth=_printer_auth("printer_set_response"),
         data={"ConnectionType": "GetRequest", "ID": "printer_set_response"},
     )
 
     response = client.post(
         "/sdp/print",
+        auth=_printer_auth("printer_set_response"),
         data={
             "ConnectionType": "SetResponse",
             "ID": "printer_set_response",
@@ -163,6 +190,10 @@ def test_set_response_marks_latest_sent_job_printed(client: TestClient) -> None:
     job = next(job for job in jobs_response.json() if job["printer_id"] == "printer_set_response")
     assert job["status"] == "printed"
     assert job["printer_response"] == "<response success=\"true\" />"
+
+
+def _printer_auth(printer_id: str) -> DigestAuth:
+    return DigestAuth(printer_id, "test-printer-secret")
 
 
 def _make_png_base64(width: int, height: int) -> str:
