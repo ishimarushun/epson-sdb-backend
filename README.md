@@ -29,6 +29,9 @@ uvicorn app.main:app --reload
 - `DEFAULT_DEVICE_ID`: Epson ePOS device id used in returned SDP XML. Defaults to `local_printer`.
 - `PRINTER_WIDTH_DOTS`: printable raster width for image jobs. Defaults to `576`, the common 80mm / 203dpi printable width for TM-m30II-class printers.
 
+> [!WARNING]
+> Epson printer password entry may silently ignore unsupported special characters. If Digest authentication fails with `digest response mismatch`, first try a simple ASCII password using letters and numbers only, then set the exact same value in `PRINTER_POLL_PASSWORD`.
+
 ## Endpoints
 
 ### Health
@@ -40,6 +43,10 @@ curl http://localhost:8000/health
 ### Admin Test Page
 
 Open `http://localhost:8000/admin` in a browser.
+
+The admin page creates jobs through `/api/jobs`, so it uses `API_KEY`, not `PRINTER_POLL_PASSWORD`. The printer itself uses `PRINTER_POLL_PASSWORD` only when polling `/sdp/print`.
+
+If the backend is served behind a reverse proxy, route the admin page and API paths together. For a root-mounted domain, forward `/admin`, `/api/*`, and `/sdp/*` to this backend. For a path prefix such as `/printer`, forward and rewrite `/printer/admin`, `/printer/api/*`, and `/printer/sdp/*` to `/admin`, `/api/*`, and `/sdp/*`.
 
 ### Create A Print Job
 
