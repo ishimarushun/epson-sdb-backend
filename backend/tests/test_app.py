@@ -226,6 +226,46 @@ def test_set_response_marks_latest_sent_job_printed(client: TestClient) -> None:
     assert job["printer_response"] == "<response success=\"true\" />"
 
 
+def test_admin_login_updates_config_and_public_print_creates_jobs(client: TestClient) -> None:
+    login_response = client.post(
+        "/api/auth/login",
+        json={"username": "admin", "password": "change-me-admin"},
+    )
+    assert login_response.status_code == 200
+
+    printers_response = client.get("/api/admin/printers")
+    assert printers_response.status_code == 200
+    printer_id = printers_response.json()[0]["id"]
+
+    config_response = client.put(
+        "/api/admin/config",
+        json={
+            "printing_enabled": True,
+            "landing_title": "Welcome",
+            "landing_body": "Print something nice.",
+            "printer_mode": "single",
+            "default_printer_id": printer_id,
+            "allow_image_uploads": True,
+            "max_text_length": 500,
+            "max_image_bytes": 10 * 1024 * 1024,
+            "max_image_pixels": 20_000_000,
+        },
+    )
+    assert config_response.status_code == 200
+
+    public_config_response = client.get("/api/public/config")
+    assert public_config_response.status_code == 200
+    assert public_config_response.json()["printing_enabled"] is True
+
+    print_response = client.post("/api/public/print", json={"text": "Hello event", "copies": 1})
+    assert print_response.status_code == 201
+    assert print_response.json()["created_jobs"] == 1
+
+    jobs_response = client.get("/api/admin/jobs")
+    assert jobs_response.status_code == 200
+    assert any(job["text"] == "Hello event" and job["type"] == "composite" for job in jobs_response.json())
+
+
 def _printer_auth(printer_id: str) -> DigestAuth:
     return DigestAuth(printer_id, "test-printer-secret")
 

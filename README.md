@@ -10,6 +10,7 @@ docker compose up --build
 ```
 
 The API will be available at `http://localhost:8000`.
+The event frontend will be available at `http://localhost:8080`, with the admin UI at `http://localhost:8080/admin`.
 
 For local development without Docker:
 
@@ -22,12 +23,25 @@ uvicorn app.main:app --reload
 ## Environment
 
 - `API_KEY`: shared API key required by `/api/*` endpoints.
+- `ADMIN_USERNAME`: initial admin username created on first boot. Defaults to `admin`.
+- `ADMIN_PASSWORD`: initial admin password created on first boot. Change this before exposing the admin UI.
 - `PRINTER_POLL_PASSWORD`: shared HTTP Digest password required by Epson Server Direct Print polling. Configure the printer's Server Direct Print ID as the printer ID, and configure this value as its password.
 - `PRINTER_POLL_REALM`: optional HTTP Digest realm for printer polling. Defaults to `epson-sdp`.
 - `PRINTER_AUTH_DEBUG`: set to `true` to log sanitized printer authentication failure reasons.
 - `DATABASE_URL`: SQLAlchemy database URL. Defaults to SQLite.
 - `DEFAULT_DEVICE_ID`: Epson ePOS device id used in returned SDP XML. Defaults to `local_printer`.
+- `DEFAULT_PRINTER_SDP_ID`: initial printer ID created on first boot. Defaults to `printer_001`.
+- `DEFAULT_PRINTER_NAME`: initial printer display name created on first boot. Defaults to `Main printer`.
 - `PRINTER_WIDTH_DOTS`: printable raster width for image jobs. Defaults to `576`, the common 80mm / 203dpi printable width for TM-m30II-class printers.
+
+## Frontend And Admin
+
+The React frontend has two modes:
+
+- Public event page at `/`: fetches `/api/public/config`; when printing is disabled it shows a landing page, and when printing is enabled it shows text/image print controls.
+- Admin page at `/admin`: uses backend username/password login with an HTTP-only session cookie. Admins can toggle printing, edit landing copy, manage printers, choose single/select/all printer routing, and view recent jobs.
+
+For Caddy on the host, route `/` to the frontend container and route `/api/*` plus `/sdp/*` to the backend container. Do not expose backend admin credentials or `API_KEY` in frontend code.
 
 > [!WARNING]
 > Epson printer password entry may silently ignore unsupported special characters. If Digest authentication fails with `digest response mismatch`, first try a simple ASCII password using letters and numbers only, then set the exact same value in `PRINTER_POLL_PASSWORD`.
@@ -47,6 +61,8 @@ Open `http://localhost:8000/admin` in a browser.
 The admin page creates jobs through `/api/jobs`, so it uses `API_KEY`, not `PRINTER_POLL_PASSWORD`. The printer itself uses `PRINTER_POLL_PASSWORD` only when polling `/sdp/print`.
 
 If the backend is served behind a reverse proxy, route the admin page and API paths together. For a root-mounted domain, forward `/admin`, `/api/*`, and `/sdp/*` to this backend. For a path prefix such as `/printer`, forward and rewrite `/printer/admin`, `/printer/api/*`, and `/printer/sdp/*` to `/admin`, `/api/*`, and `/sdp/*`.
+
+With a split public/Tailnet Caddy setup, keep `/sdp/*` on the public printer hostname and keep `/admin` plus `/api/*` on the Tailnet hostname. For example, the printer polls `https://print.74404947.xyz/sdp/print`, while admin/API calls use `http://100.64.0.2/admin` and `http://100.64.0.2/api/jobs`.
 
 ### Create A Print Job
 
@@ -80,12 +96,45 @@ curl -X POST http://localhost:8000/api/jobs \
   }"
 ```
 
+Behind the Tailnet-only admin/API proxy, send the image job to the Tailnet API URL instead:
+
+```bash
+IMAGE_BASE64="$(base64 -w 0 receipt-logo.png)"
+
+curl -X POST http://100.X.X.X/api/jobs \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: dev-secret" \
+  -d "{
+    \"printer_id\": \"printer_001\",
+    \"type\": \"image\",
+    \"image_base64\": \"${IMAGE_BASE64}\",
+    \"copies\": 1
+  }"
+```
+
 On Windows PowerShell:
 
 ```powershell
 $imageBase64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes("receipt-logo.png"))
 
 Invoke-RestMethod http://localhost:8000/api/jobs `
+  -Method Post `
+  -Headers @{ "X-API-Key" = "dev-secret" } `
+  -ContentType "application/json" `
+  -Body (@{
+    printer_id = "printer_001"
+    type = "image"
+    image_base64 = $imageBase64
+    copies = 1
+  } | ConvertTo-Json)
+```
+
+Behind the Tailnet-only admin/API proxy, use:
+
+```powershell
+$imageBase64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes("receipt-logo.png"))
+
+Invoke-RestMethod http://X.X.X.X/api/jobs `
   -Method Post `
   -Headers @{ "X-API-Key" = "dev-secret" } `
   -ContentType "application/json" `
@@ -110,6 +159,15 @@ When no pending job exists, this returns HTTP 200 with `Content-Type: text/xml; 
 
 ```bash
 curl -i -X POST http://localhost:8000/sdp/print \
+  --digest -u printer_001:dev-printer-secret \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  --data "ConnectionType=GetRequest&ID=printer_001"
+```
+
+Behind the public printer proxy, the printer should poll the public SDP URL:
+
+```bash
+curl -i -X POST https://print.yourdomain.com/sdp/print \
   --digest -u printer_001:dev-printer-secret \
   -H "Content-Type: application/x-www-form-urlencoded" \
   --data "ConnectionType=GetRequest&ID=printer_001"

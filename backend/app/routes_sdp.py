@@ -4,7 +4,7 @@ from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.epos_xml import build_image_epos_xml, build_text_epos_xml, wrap_sdp_print_request
+from app.epos_xml import build_composite_epos_xml, build_image_epos_xml, build_text_epos_xml, wrap_sdp_print_request
 from app.image_processing import prepare_image_for_80mm_203dpi
 from app.models import PrintJob
 from app.security import require_printer_digest_auth
@@ -45,7 +45,10 @@ def printer_poll(
         job.status = "sent_to_printer"
         db.commit()
 
-        if job.type == "image" and job.image_base64:
+        if job.type == "composite":
+            image = prepare_image_for_80mm_203dpi(job.image_base64) if job.image_base64 else None
+            epos_xml = build_composite_epos_xml(job.text, image, job.copies)
+        elif job.type == "image" and job.image_base64:
             image = prepare_image_for_80mm_203dpi(job.image_base64)
             epos_xml = build_image_epos_xml(image, job.copies)
         else:

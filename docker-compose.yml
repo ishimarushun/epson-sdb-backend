@@ -6,13 +6,25 @@ services:
       - "8000:8000"
     environment:
       API_KEY: ${API_KEY:-dev-secret}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-change-me-admin}
       PRINTER_POLL_PASSWORD: ${PRINTER_POLL_PASSWORD:-dev-printer-secret}
       PRINTER_AUTH_DEBUG: ${PRINTER_AUTH_DEBUG:-false}
       DATABASE_URL: ${DATABASE_URL:-sqlite:////data/sdp.db}
       DEFAULT_DEVICE_ID: ${DEFAULT_DEVICE_ID:-local_printer}
+      DEFAULT_PRINTER_SDP_ID: ${DEFAULT_PRINTER_SDP_ID:-printer_001}
+      DEFAULT_PRINTER_NAME: ${DEFAULT_PRINTER_NAME:-Main printer}
       PRINTER_WIDTH_DOTS: ${PRINTER_WIDTH_DOTS:-576}
     volumes:
       - sdp_data:/data
+
+  frontend:
+    build:
+      context: ./frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
 
 volumes:
   sdp_data:

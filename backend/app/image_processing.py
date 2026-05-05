@@ -8,6 +8,7 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 
 
 DEFAULT_80MM_203DPI_WIDTH_DOTS = 576
+SUPPORTED_IMAGE_FORMATS = {"JPEG", "PNG", "WEBP"}
 
 
 @dataclass(frozen=True)
@@ -44,6 +45,22 @@ def prepare_image_for_80mm_203dpi(image_base64: str) -> EpsonRasterImage:
         height=mono.height,
         data_base64=base64.b64encode(raster).decode("ascii"),
     )
+
+
+def validate_upload_image(image_base64: str, max_bytes: int, max_pixels: int) -> None:
+    raw = _decode_base64_image(image_base64)
+    if len(raw) > max_bytes:
+        raise ValueError(f"image must be {max_bytes} bytes or smaller")
+
+    try:
+        with Image.open(io.BytesIO(raw)) as source:
+            if source.format not in SUPPORTED_IMAGE_FORMATS:
+                raise ValueError("image must be a JPEG, PNG, or WebP file")
+            if source.width * source.height > max_pixels:
+                raise ValueError(f"image must be {max_pixels} pixels or smaller")
+            source.verify()
+    except UnidentifiedImageError as exc:
+        raise ValueError("image_base64 must contain a valid image file") from exc
 
 
 def _decode_base64_image(image_base64: str) -> bytes:

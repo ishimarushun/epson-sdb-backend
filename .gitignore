@@ -4,3 +4,6 @@ __pycache__/
 pytest-cache-files-*/
 .env
 *.db
+frontend/node_modules/
+frontend/dist/
+*.tsbuildinfo

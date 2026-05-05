@@ -5,7 +5,9 @@ from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
 from app.db import init_db
+from app.routes_admin import router as admin_router
 from app.routes_api import router as api_router
+from app.routes_public import router as public_router
 from app.routes_sdp import router as sdp_router
 
 
@@ -100,4 +102,6 @@ def admin_page() -> str:
 
 
 app.include_router(api_router)
+app.include_router(public_router)
+app.include_router(admin_router)
 app.include_router(sdp_router)
