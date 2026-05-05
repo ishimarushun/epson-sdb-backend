@@ -1,6 +1,6 @@
-# Epson Server Direct Print Backend MVP
+# Epson Server Direct Print Backend + Frontend
 
-Dockerised FastAPI MVP for Epson Server Direct Print. It lets an API client create print jobs, lets an Epson TM-m30II-S poll for jobs, returns Epson Server Direct Print XML when work exists, and returns an empty HTTP 200 XML response when there is no work.
+Dockerised FastAPI for Epson Server Direct Print. It lets an API client create print jobs, lets an Epson TM-m30II-S poll for jobs, returns Epson Server Direct Print XML when work exists, and returns an empty HTTP 200 XML response when there is no work. Alternatively, there is a simple web app for sending text and images to multiple printer.
 
 ## Run
 
